@@ -1,0 +1,322 @@
+name: Build
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  Step_01_WriteYourFirstPact:
+    env:
+      working_dir: ./Step_01_WriteYourFirstPact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+      - run: npm run test:consumer
+        working-directory: ${{ env.working_dir }}
+  Step_02_VerifyYourFirstPactLocally:
+    env:
+      working_dir: ./Step_02_VerifyYourFirstPactLocally
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+      - run: npm run test:provider
+        working-directory: ${{ env.working_dir }}
+  Step_03_GetAPactBroker:
+    timeout-minutes: 10
+    env:
+      working_dir: ./Step_03_GetAPactBroker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Start OSS Pact Broker
+        run: docker-compose up -d --build
+        working-directory: ${{ env.working_dir }}
+      - name: Stop OSS Pact Broker
+        if: always()
+        run: docker-compose down
+        working-directory: ${{ env.working_dir }}
+  Step_04_PublishYourFirstPactLocally:
+    timeout-minutes: 10
+    env:
+      working_dir: ./Step_04_PublishYourFirstPactLocally
+      docker_compose_dir: ./Step_03_GetAPactBroker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Start OSS Pact Broker
+        run: docker-compose up -d --build
+        working-directory: ${{ env.docker_compose_dir }}
+      - run: make doctor
+        working-directory: ${{ env.working_dir }}
+      - run: make publish_docker
+        working-directory: ${{ env.working_dir }}
+      - name: Stop OSS Pact Broker
+        if: always()
+        run: docker-compose down
+        working-directory: ${{ env.docker_compose_dir }}
+  Step_05_VerifyYourFirstPactFromABrokerLocally:
+    timeout-minutes: 10
+    env:
+      working_dir: ./Step_05_VerifyYourFirstPactFromABrokerLocally
+      docker_compose_dir: ./Step_03_GetAPactBroker
+      consumer_dir: ./Step_04_PublishYourFirstPactLocally
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Start OSS Pact Broker
+        run: docker-compose up -d --build
+        working-directory: ${{ env.docker_compose_dir }}
+      - run: make publish_docker
+        working-directory: ${{ env.consumer_dir }}
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+      - run: npm run test:provider
+        working-directory: ${{ env.working_dir }}
+        env:
+          PACT_BROKER_PUBLISH_VERIFICATION_RESULTS: true
+      - name: Stop OSS Pact Broker
+        if: always()
+        run: docker-compose down
+        working-directory: ${{ env.docker_compose_dir }}
+  Step_06_PublishYourFirstPactFromCI:
+    timeout-minutes: 10
+    env:
+      working_dir: ./Step_06_PublishYourFirstPactFromCI
+      docker_compose_dir: ./Step_03_GetAPactBroker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Start OSS Pact Broker
+        run: docker-compose up -d --build
+        working-directory: ${{ env.docker_compose_dir }}
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+      - run: make ci
+        working-directory: ${{ env.working_dir }}
+      - name: Stop OSS Pact Broker
+        if: always()
+        run: docker-compose down
+        working-directory: ${{ env.docker_compose_dir }}
+  Step_07_VerifyYourFirstPactFromCI:
+    timeout-minutes: 10
+    env:
+      working_dir: ./Step_07_VerifyYourFirstPactFromCI
+      docker_compose_dir: ./Step_03_GetAPactBroker
+      consumer_dir: ./Step_06_PublishYourFirstPactFromCI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Start OSS Pact Broker
+        run: docker-compose up -d --build
+        working-directory: ${{ env.docker_compose_dir }}
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+      - run: make ci
+        name: publish first consumer pact
+        working-directory: ${{ env.consumer_dir }}
+      - run: make ci
+        name: verify first consumer pact
+        working-directory: ${{ env.working_dir }}
+        env:
+          PACT_BROKER_PUBLISH_VERIFICATION_RESULTS: true
+      - name: Stop OSS Pact Broker
+        if: always()
+        run: docker-compose down
+        working-directory: ${{ env.docker_compose_dir }}
+  Step_08_AddCanIDeployForProvider:
+    timeout-minutes: 10
+    env:
+      working_dir: ./Step_08_AddCanIDeployForProvider
+      docker_compose_dir: ./Step_03_GetAPactBroker
+      consumer_dir: ./Step_06_PublishYourFirstPactFromCI
+      provider_dir: ./Step_07_VerifyYourFirstPactFromCI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Start OSS Pact Broker
+        run: docker-compose up -d --build
+        working-directory: ${{ env.docker_compose_dir }}
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+      - run: make ci
+        name: publish first consumer pact
+        working-directory: ${{ env.consumer_dir }}
+      - run: make ci
+        name: verify first consumer pact
+        working-directory: ${{ env.provider_dir }}
+        env:
+          PACT_BROKER_PUBLISH_VERIFICATION_RESULTS: true
+      - run: make can_i_deploy_docker
+        name: can-i-deploy provider
+        working-directory: ${{ env.working_dir }}
+      - name: Stop OSS Pact Broker
+        if: always()
+        run: docker-compose down
+        working-directory: ${{ env.docker_compose_dir }}
+  Step_09_AddRecordDeploymentForProvider:
+    timeout-minutes: 10
+    env:
+      working_dir: ./Step_09_AddRecordDeploymentForProvider
+      docker_compose_dir: ./Step_03_GetAPactBroker
+      consumer_dir: ./Step_06_PublishYourFirstPactFromCI
+      provider_dir: ./Step_07_VerifyYourFirstPactFromCI
+      provider_can_i_deploy_dir: ./Step_08_AddCanIDeployForProvider
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Start OSS Pact Broker
+        run: docker-compose up -d --build
+        working-directory: ${{ env.docker_compose_dir }}
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+      - run: make ci
+        name: publish first consumer pact
+        working-directory: ${{ env.consumer_dir }}
+      - run: make ci
+        name: verify first consumer pact
+        working-directory: ${{ env.provider_dir }}
+        env:
+          PACT_BROKER_PUBLISH_VERIFICATION_RESULTS: true
+      - run: make can_i_deploy_docker
+        name: can-i-deploy provider
+        working-directory: ${{ env.provider_can_i_deploy_dir }}
+      - run: make record_deployment_docker
+        name: record deployment provider
+        working-directory: ${{ env.working_dir }}
+      - name: Stop OSS Pact Broker
+        if: always()
+        run: docker-compose down
+        working-directory: ${{ env.docker_compose_dir }}
+  Step_10_AddCanIDeployForConsumer:
+    timeout-minutes: 10
+    env:
+      working_dir: ./Step_10_AddCanIDeployForConsumer
+      docker_compose_dir: ./Step_03_GetAPactBroker
+      consumer_dir: ./Step_06_PublishYourFirstPactFromCI
+      provider_dir: ./Step_07_VerifyYourFirstPactFromCI
+      provider_can_i_deploy_dir: ./Step_08_AddCanIDeployForProvider
+      provider_record_deploy_dir: ./Step_09_AddRecordDeploymentForProvider
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Start OSS Pact Broker
+        run: docker-compose up -d --build
+        working-directory: ${{ env.docker_compose_dir }}
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+      - run: make ci
+        name: publish first consumer pact
+        working-directory: ${{ env.consumer_dir }}
+      - run: make ci
+        name: verify first consumer pact
+        working-directory: ${{ env.provider_dir }}
+        env:
+          PACT_BROKER_PUBLISH_VERIFICATION_RESULTS: true
+      - run: make can_i_deploy_docker
+        name: can-i-deploy provider
+        working-directory: ${{ env.provider_can_i_deploy_dir }}
+      - run: make record_deployment_docker
+        name: record deployment provider
+        working-directory: ${{ env.provider_record_deploy_dir }}
+      - run: make can_i_deploy_docker
+        name: can-i-deploy consumer
+        working-directory: ${{ env.working_dir }}
+      - name: Stop OSS Pact Broker
+        if: always()
+        run: docker-compose down
+        working-directory: ${{ env.docker_compose_dir }}
+  Step_11_AddRecordDeploymentForConsumer:
+    timeout-minutes: 10
+    env:
+      working_dir: ./Step_11_AddRecordDeploymentForConsumer
+      docker_compose_dir: ./Step_03_GetAPactBroker
+      consumer_dir: ./Step_06_PublishYourFirstPactFromCI
+      provider_dir: ./Step_07_VerifyYourFirstPactFromCI
+      provider_can_i_deploy_dir: ./Step_08_AddCanIDeployForProvider
+      provider_record_deploy_dir: ./Step_09_AddRecordDeploymentForProvider
+      consumer_can_i_deploy_dir: ./Step_10_AddCanIDeployForConsumer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Start OSS Pact Broker
+        run: docker-compose up -d --build
+        working-directory: ${{ env.docker_compose_dir }}
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+      - run: make ci
+        name: publish first consumer pact
+        working-directory: ${{ env.consumer_dir }}
+      - run: make ci
+        name: verify first consumer pact
+        working-directory: ${{ env.provider_dir }}
+        env:
+          PACT_BROKER_PUBLISH_VERIFICATION_RESULTS: true
+      - run: make can_i_deploy_docker
+        name: can-i-deploy provider
+        working-directory: ${{ env.provider_can_i_deploy_dir }}
+      - run: make record_deployment_docker
+        name: record deployment provider
+        working-directory: ${{ env.provider_record_deploy_dir }}
+      - run: make can_i_deploy_docker
+        name: can-i-deploy consumer
+        working-directory: ${{ env.consumer_can_i_deploy_dir }}
+      - run: make record_deployment_docker
+        name: record deployment consumer
+        working-directory: ${{ env.working_dir }}
+      - name: Stop OSS Pact Broker
+        if: always()
+        run: docker-compose down
+        working-directory: ${{ env.docker_compose_dir }}
+  Step_13_CompleteBuild:
+    timeout-minutes: 10
+    env:
+      working_dir: ./Step_13_CompleteBuild
+      docker_compose_dir: ./Step_03_GetAPactBroker
+      consumer_dir: ./Step_13_CompleteBuild/consumer_codebase
+      provider_dir: ./Step_13_CompleteBuild/provider_codebase
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Start OSS Pact Broker
+        run: docker-compose up -d --build
+        working-directory: ${{ env.docker_compose_dir }}
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+      - run: make ci
+        name: publish first consumer pact
+        working-directory: ${{ env.consumer_dir }}
+      - run: make ci
+        name: verify first consumer pact
+        working-directory: ${{ env.provider_dir }}
+        env:
+          PACT_BROKER_PUBLISH_VERIFICATION_RESULTS: true
+      - run: make can_i_deploy_docker
+        name: can-i-deploy provider
+        working-directory: ${{ env.provider_dir }}
+      - run: make record_deployment_docker
+        name: record deployment provider
+        working-directory: ${{ env.provider_dir }}
+      - run: make can_i_deploy_docker
+        name: can-i-deploy consumer
+        working-directory: ${{ env.consumer_dir }}
+      - run: make record_deployment_docker
+        name: record deployment consumer
+        working-directory: ${{ env.consumer_dir }}
+      - name: Stop OSS Pact Broker
+        if: always()
+        run: docker-compose down
+        working-directory: ${{ env.docker_compose_dir }}
