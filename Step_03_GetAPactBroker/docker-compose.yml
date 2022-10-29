@@ -27,6 +27,6 @@ services:
       PACT_BROKER_DATABASE_NAME: postgres
       PACT_BROKER_DATABASE_CONNECT_MAX_RETRIES: "10"
 
-networks:
-  default:
-    name: pact_broker_network
+# networks:
+#   default:
+#     name: pact_broker_network
